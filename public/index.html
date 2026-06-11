@@ -209,7 +209,7 @@ function renderList() {
       if (!a.stocks.some(s => s.name.includes(q)) && !a.title.includes(q)) return false;
     }
     return true;
-  });
+  }).sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
 
   if (filtered.length === 0) {
     list.innerHTML = `<div class="empty">조건에 맞는 기사가 없어요.<br>필터를 바꾸거나 새로고침 해보세요.</div>`;
