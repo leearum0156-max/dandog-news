@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>상장사 단독 뉴스 대시보드</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: #0f0f0f; color: #f0f0f0; min-height: 100vh; }
+
+  /* 헤더 */
+  header {
+    background: #0f0f0f;
+    border-bottom: 1px solid #222;
+    padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-badge {
+    background: #e8ff3c; color: #0f0f0f;
+    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 4px;
+  }
+  .logo-title { font-size: 17px; font-weight: 700; color: #f0f0f0; letter-spacing: -0.5px; }
+  .logo-sub { font-size: 12px; color: #666; margin-top: 1px; }
+
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  #last-updated { font-size: 12px; color: #555; }
+  #refresh-btn {
+    background: #e8ff3c; color: #0f0f0f; border: none;
+    padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: 'Noto Sans KR', sans-serif; transition: opacity 0.15s;
+  }
+  #refresh-btn:hover { opacity: 0.85; }
+  #refresh-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* 상단 통계 */
+  .stats { display: flex; gap: 20px; padding: 16px 28px; border-bottom: 1px solid #1a1a1a; }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-num { font-size: 22px; font-weight: 700; color: #e8ff3c; letter-spacing: -1px; }
+  .stat-label { font-size: 11px; color: #555; letter-spacing: 0.3px; }
+
+  /* 필터 바 */
+  .filter-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 28px; border-bottom: 1px solid #1a1a1a;
+    flex-wrap: wrap;
+  }
+  .filter-label { font-size: 12px; color: #555; }
+  .filter-btn {
+    background: #1a1a1a; color: #888; border: 1px solid #2a2a2a;
+    padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: 'Noto Sans KR', sans-serif; transition: all 0.15s;
+  }
+  .filter-btn:hover { border-color: #444; color: #ccc; }
+  .filter-btn.active { background: #e8ff3c; color: #0f0f0f; border-color: #e8ff3c; }
+  #search-input {
+    background: #1a1a1a; border: 1px solid #2a2a2a; color: #f0f0f0;
+    padding: 6px 14px; border-radius: 20px; font-size: 12px;
+    font-family: 'Noto Sans KR', sans-serif; outline: none; width: 180px;
+    transition: border-color 0.15s;
+  }
+  #search-input:focus { border-color: #e8ff3c; }
+  #search-input::placeholder { color: #444; }
+
+  /* 뉴스 리스트 */
+  .container { max-width: 900px; margin: 0 auto; padding: 20px 28px; }
+
+  #news-list { display: flex; flex-direction: column; gap: 1px; }
+
+  .news-item {
+    background: #141414; border: 1px solid #1e1e1e;
+    border-radius: 10px; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 8px;
+    text-decoration: none; color: inherit;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 6px;
+  }
+  .news-item:hover { border-color: #333; background: #181818; }
+
+  .news-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge-dandog {
+    background: #fff0a0; color: #7a6000;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+  }
+  .badge-market {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+  }
+  .badge-kospi { background: #1a3a6e; color: #7eb3ff; }
+  .badge-kosdaq { background: #1a4a2e; color: #7eff9a; }
+  .stock-tag {
+    background: #1e1e1e; color: #aaa; border: 1px solid #2a2a2a;
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  }
+  .news-title {
+    font-size: 15px; font-weight: 500; color: #f0f0f0;
+    line-height: 1.5; letter-spacing: -0.2px;
+  }
+  .news-bottom { display: flex; align-items: center; gap: 10px; }
+  .news-source { font-size: 11px; color: #555; font-weight: 700; }
+  .news-time { font-size: 11px; color: #444; }
+
+  /* 로딩 */
+  #loading { text-align: center; padding: 80px 20px; }
+  .spinner {
+    width: 36px; height: 36px; border: 3px solid #222; border-top-color: #e8ff3c;
+    border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { font-size: 14px; color: #555; }
+
+  /* 에러 / 빈 상태 */
+  .empty { text-align: center; padding: 80px 20px; color: #444; font-size: 14px; line-height: 1.8; }
+  .error-box {
+    background: #1a0000; border: 1px solid #3a0000; border-radius: 10px;
+    padding: 20px; text-align: center; font-size: 13px; color: #ff8080; line-height: 1.8;
+    display: none;
+  }
+
+  @media (max-width: 600px) {
+    header { padding: 12px 16px; }
+    .stats, .filter-bar, .container { padding-left: 16px; padding-right: 16px; }
+    .logo-title { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-badge">단독</span>
+    <div>
+      <div class="logo-title">상장사 단독 뉴스</div>
+      <div class="logo-sub">코스피 · 코스닥 상장사 관련 단독 기사만</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span id="last-updated">-</span>
+    <button id="refresh-btn" onclick="loadNews()">새로고침</button>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat-item">
+    <span class="stat-num" id="stat-total">-</span>
+    <span class="stat-label">매칭 기사</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" id="stat-kospi">-</span>
+    <span class="stat-label">KOSPI</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" id="stat-kosdaq">-</span>
+    <span class="stat-label">KOSDAQ</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" id="stat-stocks">-</span>
+    <span class="stat-label">언급 종목 수</span>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <span class="filter-label">필터</span>
+  <button class="filter-btn active" onclick="setFilter('all', this)">전체</button>
+  <button class="filter-btn" onclick="setFilter('KOSPI', this)">KOSPI</button>
+  <button class="filter-btn" onclick="setFilter('KOSDAQ', this)">KOSDAQ</button>
+  <input type="text" id="search-input" placeholder="종목명 검색..." oninput="renderList()">
+</div>
+
+<div class="container">
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>상장사 목록과 대조 중...</p>
+  </div>
+  <div id="error-box" class="error-box"></div>
+  <div id="news-list"></div>
+</div>
+
+<script>
+let allArticles = [];
+let currentFilter = 'all';
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}초 전`;
+  if (diff < 3600) return `${Math.floor(diff/60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}시간 전`;
+  return `${Math.floor(diff/86400)}일 전`;
+}
+
+function setFilter(f, el) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+}
+
+function renderList() {
+  const q = document.getElementById('search-input').value.trim();
+  const list = document.getElementById('news-list');
+
+  let filtered = allArticles.filter(a => {
+    if (currentFilter !== 'all') {
+      if (!a.stocks.some(s => s.market === currentFilter)) return false;
+    }
+    if (q) {
+      if (!a.stocks.some(s => s.name.includes(q)) && !a.title.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty">조건에 맞는 기사가 없어요.<br>필터를 바꾸거나 새로고침 해보세요.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(a => {
+    const markets = [...new Set(a.stocks.map(s => s.market))];
+    const marketBadges = markets.map(m =>
+      `<span class="badge-market badge-${m.toLowerCase()}">${m}</span>`
+    ).join('');
+    const stockTags = a.stocks.slice(0, 4).map(s =>
+      `<span class="stock-tag">${s.name}</span>`
+    ).join('');
+    const more = a.stocks.length > 4 ? `<span class="stock-tag">+${a.stocks.length - 4}</span>` : '';
+
+    return `
+      <a class="news-item" href="${a.link}" target="_blank" rel="noopener">
+        <div class="news-top">
+          <span class="badge-dandog">단독</span>
+          ${marketBadges}
+          ${stockTags}${more}
+        </div>
+        <div class="news-title">${a.title}</div>
+        <div class="news-bottom">
+          <span class="news-source">${a.source}</span>
+          <span class="news-time">${timeAgo(a.publishedAt)}</span>
+        </div>
+      </a>`;
+  }).join('');
+}
+
+function updateStats(articles) {
+  const kospi = articles.filter(a => a.stocks.some(s => s.market === 'KOSPI')).length;
+  const kosdaq = articles.filter(a => a.stocks.some(s => s.market === 'KOSDAQ')).length;
+  const uniqueStocks = new Set(articles.flatMap(a => a.stocks.map(s => s.code))).size;
+  document.getElementById('stat-total').textContent = articles.length;
+  document.getElementById('stat-kospi').textContent = kospi;
+  document.getElementById('stat-kosdaq').textContent = kosdaq;
+  document.getElementById('stat-stocks').textContent = uniqueStocks;
+}
+
+async function loadNews() {
+  const btn = document.getElementById('refresh-btn');
+  const loading = document.getElementById('loading');
+  const errorBox = document.getElementById('error-box');
+  const newsList = document.getElementById('news-list');
+
+  btn.disabled = true;
+  btn.textContent = '불러오는 중...';
+  loading.style.display = 'block';
+  errorBox.style.display = 'none';
+  newsList.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/news');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    allArticles = data.articles;
+    loading.style.display = 'none';
+
+    const now = new Date();
+    document.getElementById('last-updated').textContent =
+      `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')} 기준`;
+
+    updateStats(allArticles);
+    renderList();
+  } catch(e) {
+    loading.style.display = 'none';
+    errorBox.style.display = 'block';
+    errorBox.innerHTML = `기사를 불러오지 못했어요.<br><small>${e.message}</small>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '새로고침';
+}
+
+loadNews();
+setInterval(loadNews, 5 * 60 * 1000);
+</script>
+</body>
+</html>
