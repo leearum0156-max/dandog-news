@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   try {
     const [items, stocks] = await Promise.all([
       fetchRssItems(),
-      fetchDartStocks(),
+      fetchAllStocks(),
     ]);
 
     const matched = [];
@@ -33,6 +33,82 @@ export default async function handler(req, res) {
   }
 }
 
+async function fetchAllStocks() {
+  // 방법1: DART API (페이지 반복)
+  const dartKey = process.env.DART_API_KEY;
+  if (dartKey) {
+    const stocks = await fetchDartAll(dartKey);
+    if (stocks.length > 100) return stocks;
+  }
+  // 방법2: KRX CSV (인증키 불필요)
+  const krxStocks = await fetchKrxCsv();
+  if (krxStocks.length > 100) return krxStocks;
+
+  return FALLBACK_STOCKS;
+}
+
+async function fetchDartAll(key) {
+  const stocks = [];
+  for (const [cls, market] of [['Y','KOSPI'],['K','KOSDAQ']]) {
+    try {
+      // DART 최대 page_count = 100, 반복 호출
+      let page = 1;
+      while (page <= 30) { // 최대 3000개 (100*30)
+        const url = `https://opendart.fss.or.kr/api/company.json?crtfc_key=${key}&corp_cls=${cls}&page_count=100&page_no=${page}`;
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(5000)
+        });
+        const data = await r.json();
+        if (data.status !== '000') break;
+        for (const corp of (data.list || [])) {
+          if (corp.stock_code && corp.corp_name) {
+            stocks.push({ name: corp.corp_name.trim(), code: corp.stock_code.trim(), market });
+          }
+        }
+        if (page >= (data.total_page || 1)) break;
+        page++;
+      }
+    } catch(e) {
+      console.log(`DART ${market} 오류: ${e.message}`);
+    }
+  }
+  console.log(`DART 로드: ${stocks.length}개`);
+  return stocks;
+}
+
+async function fetchKrxCsv() {
+  const stocks = [];
+  const markets = [
+    { id: 'STK', label: 'KOSPI' },
+    { id: 'KSQ', label: 'KOSDAQ' },
+  ];
+  for (const { id, label } of markets) {
+    try {
+      const r = await fetch('http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0',
+          'Referer': 'http://data.krx.co.kr'
+        },
+        body: `bld=dbms/MDC/STAT/standard/MDCSTAT01901&mktId=${id}&share=1&csvxls_isNo=false`,
+        signal: AbortSignal.timeout(8000)
+      });
+      const data = await r.json();
+      for (const item of (data.OutBlock_1 || [])) {
+        const name = item.ISU_ABBRV || item.ISU_NM;
+        const code = item.ISU_SRT_CD || item.ISU_CD;
+        if (name && code) stocks.push({ name: name.trim(), code: code.trim(), market: label });
+      }
+    } catch(e) {
+      console.log(`KRX ${label} 오류: ${e.message}`);
+    }
+  }
+  console.log(`KRX 로드: ${stocks.length}개`);
+  return stocks;
+}
+
 async function fetchRssItems() {
   const url = 'https://news.google.com/rss/search?q=%5B%EB%8B%A8%EB%8F%85%5D&hl=ko&gl=KR&ceid=KR:ko&num=100';
   const r = await fetch(url);
@@ -47,51 +123,12 @@ async function fetchRssItems() {
     const pubDate = extract(b, 'pubDate');
     items.push({
       title: cleanTitle(title),
-      link,
-      pubDate,
+      link, pubDate,
       source: cleanSource(title),
       publishedAt: pubDate ? new Date(pubDate).toISOString() : null,
     });
   }
   return items;
-}
-
-async function fetchDartStocks() {
-  const key = process.env.DART_API_KEY;
-  if (!key) {
-    console.log('DART_API_KEY 없음 - fallback 사용');
-    return FALLBACK_STOCKS;
-  }
-
-  const stocks = [];
-
-  // DART는 페이지당 최대 100개 — 전체를 한번에 받으려면 page_count=3000으로 요청
-  for (const [cls, market] of [['Y','KOSPI'],['K','KOSDAQ']]) {
-    try {
-      // 한 번에 최대 3000개 요청 (실제 상장사 수보다 크게 설정)
-      const url = `https://opendart.fss.or.kr/api/company.json?crtfc_key=${key}&corp_cls=${cls}&page_count=3000&page_no=1`;
-      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const data = await r.json();
-
-      console.log(`DART ${market}: status=${data.status}, total_count=${data.total_count}, list_size=${(data.list||[]).length}`);
-
-      if (data.status !== '000') {
-        console.log(`DART ${market} 오류: ${data.message}`);
-        continue;
-      }
-
-      for (const corp of (data.list || [])) {
-        if (corp.stock_code && corp.corp_name) {
-          stocks.push({ name: corp.corp_name.trim(), code: corp.stock_code.trim(), market });
-        }
-      }
-    } catch(e) {
-      console.log(`DART ${market} 예외: ${e.message}`);
-    }
-  }
-
-  console.log(`DART 총 로드: ${stocks.length}개`);
-  return stocks.length > 0 ? stocks : FALLBACK_STOCKS;
 }
 
 function extract(str, tag) {
